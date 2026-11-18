@@ -665,7 +665,8 @@ def init_session_state() -> None:
         "topic_input": "Cell structure & function",
         "goals_input": "Master energy organelles and cellular respiration",
         "focus_input": "Mitochondria, ATP synthesis, and cell membranes",
-        "content_type": ContentType.FLASHCARDS.value,
+        "content_type": ContentType.BOTH.value,
+        "quiz_style": "Conceptual & Application",
         "num_flashcards": 10,
         "num_quiz": 5,
         "difficulty": DifficultyLevel.MEDIUM.value,
@@ -766,64 +767,150 @@ with st.sidebar:
     else:  # Upload file
         uploaded = st.file_uploader(
             "Drop your notes here or browse files",
-            type=["txt", "md", "csv"],
-            help="Upload raw notes or exported textbooks (TXT, Markdown, CSV).",
+            type=["txt", "md", "csv", "pdf"],
+            help="Upload raw notes, documents, or exported textbooks (TXT, Markdown, CSV, PDF).",
         )
         if uploaded is not None:
-            raw_file_text = uploaded.read().decode("utf-8", errors="ignore")
-            st.session_state.notes_content = raw_file_text
-            st.session_state.topic_input = uploaded.name.rsplit(".", 1)[0]
-            st.success(f"✓ {uploaded.name} loaded ({len(raw_file_text.split())} words)")
+            file_name_lower = uploaded.name.lower()
+            if file_name_lower.endswith(".pdf"):
+                try:
+                    import pypdf
+                    reader = pypdf.PdfReader(uploaded)
+                    extracted_pages = []
+                    for p in reader.pages:
+                        ptxt = p.extract_text()
+                        if ptxt:
+                            extracted_pages.append(ptxt)
+                    raw_file_text = "\n\n".join(extracted_pages)
+                except Exception as pe:
+                    st.error(f"Error parsing PDF: {pe}")
+                    raw_file_text = ""
+            else:
+                raw_file_text = uploaded.read().decode("utf-8", errors="ignore")
+
+            if raw_file_text.strip():
+                st.session_state.notes_content = raw_file_text
+                st.session_state.topic_input = uploaded.name.rsplit(".", 1)[0]
+                st.success(f"✓ {uploaded.name} loaded ({len(raw_file_text.split())} words)")
+            else:
+                st.warning(f"No readable text could be extracted from {uploaded.name}.")
 
     # Section 02: MAKE IT YOURS
     st.markdown("---")
     st.markdown('<div class="eyebrow-tag">02 Make It Yours</div>', unsafe_allow_html=True)
 
-    subj_val = st.text_input(
-        "Subject focus (optional)",
-        value=st.session_state.subject_input,
-        placeholder="e.g. Molecular Biology",
+    # Content Format Selector (Both, Quiz Only, Flashcards Only)
+    content_format_choice = st.radio(
+        "Study Format",
+        options=[
+            ContentType.BOTH.value,
+            ContentType.FLASHCARDS.value,
+            ContentType.QUIZ.value,
+        ],
+        horizontal=True,
     )
-    st.session_state.subject_input = subj_val
+    st.session_state.content_type = content_format_choice
 
-    topic_val = st.text_input(
-        "Exam Topic / Chapter",
-        value=st.session_state.topic_input,
-        placeholder="e.g. Cell structure & function",
-    )
-    st.session_state.topic_input = topic_val
+    # Subject & Exam Topic row
+    c_sub_a, c_sub_b = st.columns(2)
+    with c_sub_a:
+        subj_val = st.text_input(
+            "Subject focus",
+            value=st.session_state.subject_input,
+            placeholder="e.g. Molecular Biology",
+        )
+        st.session_state.subject_input = subj_val
 
-    diff_choice = st.selectbox(
-        "Difficulty",
-        options=["Beginner (Easy)", "Intermediate (Medium)", "Advanced (Hard)"],
-        index=1,
-    )
-    # Map to internal enum
-    if "Beginner" in diff_choice:
-        st.session_state.difficulty = DifficultyLevel.EASY.value
-    elif "Advanced" in diff_choice:
-        st.session_state.difficulty = DifficultyLevel.HARD.value
-    else:
-        st.session_state.difficulty = DifficultyLevel.MEDIUM.value
+    with c_sub_b:
+        topic_val = st.text_input(
+            "Exam Topic / Chapter",
+            value=st.session_state.topic_input,
+            placeholder="e.g. Cell structure & function",
+        )
+        st.session_state.topic_input = topic_val
 
-    # Stepper Quantity row (Flashcards & Quiz items side by side)
-    sc1, sc2 = st.columns(2)
-    with sc1:
+    # Difficulty & Question Focus row
+    c_diff_a, c_diff_b = st.columns(2)
+    with c_diff_a:
+        diff_choice = st.selectbox(
+            "Difficulty",
+            options=["Beginner (Easy)", "Intermediate (Medium)", "Advanced (Hard)"],
+            index=1,
+        )
+        if "Beginner" in diff_choice:
+            st.session_state.difficulty = DifficultyLevel.EASY.value
+        elif "Advanced" in diff_choice:
+            st.session_state.difficulty = DifficultyLevel.HARD.value
+        else:
+            st.session_state.difficulty = DifficultyLevel.MEDIUM.value
+
+    with c_diff_b:
+        quiz_style_choice = st.selectbox(
+            "Question Style",
+            options=[
+                "Conceptual & Application",
+                "Factual & Definitions",
+                "Scenario & Problem Solving",
+                "Exam-Style Hard Distractors",
+            ],
+            index=0,
+            help="Choose how the AI frames questions and distractors.",
+        )
+        st.session_state.quiz_style = quiz_style_choice
+
+    # Stepper Quantity row (conditioned on Content Format)
+    if content_format_choice == ContentType.BOTH.value:
+        sc1, sc2 = st.columns(2)
+        with sc1:
+            st.session_state.num_flashcards = st.number_input(
+                "Flashcards",
+                min_value=3,
+                max_value=30,
+                value=st.session_state.num_flashcards,
+                step=1,
+            )
+        with sc2:
+            st.session_state.num_quiz = st.number_input(
+                "Quiz questions",
+                min_value=3,
+                max_value=20,
+                value=st.session_state.num_quiz,
+                step=1,
+            )
+    elif content_format_choice == ContentType.FLASHCARDS.value:
         st.session_state.num_flashcards = st.number_input(
-            "Flashcards",
+            "Number of Flashcards",
             min_value=3,
-            max_value=25,
+            max_value=40,
             value=st.session_state.num_flashcards,
             step=1,
         )
-    with sc2:
+    else:
         st.session_state.num_quiz = st.number_input(
-            "Quiz questions",
+            "Number of Quiz Questions",
             min_value=3,
-            max_value=15,
+            max_value=30,
             value=st.session_state.num_quiz,
             step=1,
         )
+
+    # Optional Custom Focus / Subtopic Emphasis
+    with st.expander("🎯 Focus & Learning Goals (Optional)", expanded=False):
+        goals_val = st.text_input(
+            "Learning Goals",
+            value=st.session_state.goals_input,
+            placeholder="e.g. Master energy organelles and ATP cycle",
+            help="Specify what you want to achieve from this session.",
+        )
+        st.session_state.goals_input = goals_val
+
+        focus_val = st.text_input(
+            "Target Subtopics / Keywords",
+            value=st.session_state.focus_input,
+            placeholder="e.g. Focus on thylakoid membrane and Calvin cycle",
+            help="Direct the AI to prioritize specific concepts or formulas.",
+        )
+        st.session_state.focus_input = focus_val
 
     # API Configuration Collapsible - Google Gemini
     with st.expander("🔑 LLM Settings (Google Gemini / Demo)", expanded=True):
@@ -918,33 +1005,49 @@ if generate_clicked:
             mock_mode=is_demo_active,
         )
 
-        with st.spinner("🧠 Generating your study set (Flashcards & Quiz)..."):
-            # 1. Generate Flashcards
-            fc_req = GenerationRequest(
-                content=raw_notes,
-                content_type=ContentType.FLASHCARDS,
-                subject=st.session_state.subject_input,
-                exam_topic=st.session_state.topic_input,
-                num_items=st.session_state.num_flashcards,
-                difficulty=DifficultyLevel(st.session_state.difficulty),
-                focus_instructions=st.session_state.focus_input,
-            )
-            deck, fc_err = service.generate_flashcards(fc_req)
+        # Combine custom focus and question style into focus instructions
+        style_instruction = f"Question Style: {st.session_state.get('quiz_style', 'Conceptual & Application')}."
+        user_focus = st.session_state.get("focus_input", "")
+        combined_focus = f"{style_instruction} {user_focus}".strip()
 
-            # 2. Generate Quiz
-            q_req = GenerationRequest(
-                content=raw_notes,
-                content_type=ContentType.QUIZ,
-                subject=st.session_state.subject_input,
-                exam_topic=st.session_state.topic_input,
-                num_items=st.session_state.num_quiz,
-                difficulty=DifficultyLevel(st.session_state.difficulty),
-                focus_instructions=st.session_state.focus_input,
-            )
-            quiz, q_err = service.generate_quiz(q_req)
+        with st.spinner("🧠 Generating your study set..."):
+            deck = None
+            fc_err = None
+            quiz = None
+            q_err = None
 
-            if fc_err and q_err:
-                st.session_state["generation_error"] = fc_err
+            # 1. Generate Flashcards (if requested)
+            if content_format_choice in (ContentType.BOTH.value, ContentType.FLASHCARDS.value):
+                fc_req = GenerationRequest(
+                    content=raw_notes,
+                    content_type=ContentType.FLASHCARDS,
+                    subject=st.session_state.subject_input,
+                    exam_topic=st.session_state.topic_input,
+                    learning_goals=st.session_state.goals_input,
+                    num_items=st.session_state.num_flashcards,
+                    difficulty=DifficultyLevel(st.session_state.difficulty),
+                    focus_instructions=combined_focus,
+                )
+                deck, fc_err = service.generate_flashcards(fc_req)
+
+            # 2. Generate Quiz (if requested)
+            if content_format_choice in (ContentType.BOTH.value, ContentType.QUIZ.value):
+                q_req = GenerationRequest(
+                    content=raw_notes,
+                    content_type=ContentType.QUIZ,
+                    subject=st.session_state.subject_input,
+                    exam_topic=st.session_state.topic_input,
+                    learning_goals=st.session_state.goals_input,
+                    num_items=st.session_state.num_quiz,
+                    difficulty=DifficultyLevel(st.session_state.difficulty),
+                    focus_instructions=combined_focus,
+                )
+                quiz, q_err = service.generate_quiz(q_req)
+
+            # Evaluate errors based on what was requested
+            errors = [e for e in (fc_err, q_err) if e]
+            if errors and not (deck or quiz):
+                st.session_state["generation_error"] = " • ".join(errors)
             else:
                 st.session_state["generation_error"] = None
                 if deck:
@@ -952,12 +1055,17 @@ if generate_clicked:
                     st.session_state.card_current_index = 0
                     st.session_state.card_revealed = False
                     st.session_state.card_statuses = {}
+                elif content_format_choice == ContentType.QUIZ.value:
+                    st.session_state.generated_flashcards = None
+
                 if quiz:
                     st.session_state.generated_quiz = quiz
                     st.session_state.quiz_current_index = 0
                     st.session_state.quiz_answers = {}
                     st.session_state.quiz_submitted = {}
                     st.session_state.quiz_finished = False
+                elif content_format_choice == ContentType.FLASHCARDS.value:
+                    st.session_state.generated_quiz = None
 
                 st.success("✨ Study set generated successfully!")
                 st.rerun()

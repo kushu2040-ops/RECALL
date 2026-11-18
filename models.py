@@ -18,8 +18,9 @@ class DifficultyLevel(str, Enum):
 
 class ContentType(str, Enum):
     """Supported output formats."""
-    QUIZ = "Multiple-Choice Quiz"
-    FLASHCARDS = "Q&A Flashcards"
+    BOTH = "Both Flashcards & Quiz"
+    QUIZ = "Multiple-Choice Quiz Only"
+    FLASHCARDS = "Q&A Flashcards Only"
 
 
 class GenerationRequest(BaseModel):
