@@ -397,6 +397,8 @@ def test_resolve_api_key(monkeypatch):
 
     # Environment variable fallback
     monkeypatch.setenv("GEMINI_API_KEY", "gemini_secret_key")
+    # Patch dotenv to avoid re-reading .env file during unit test
+    monkeypatch.setattr("llm_service.load_dotenv", lambda **kwargs: None)
     assert resolve_api_key(None) == "gemini_secret_key"
 
 

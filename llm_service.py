@@ -364,92 +364,93 @@ class LLMService:
             return None, format_api_error(err, self.api_key)
 
     def _generate_mock_quiz(self, request: GenerationRequest) -> QuizSet:
-        """Synthesize intelligent mock quiz items derived from the provided content."""
+        """Synthesize intelligent mock quiz items derived directly from the provided content."""
         content = request.content.strip()
-        lines = [line.strip() for line in re.split(r"[.\n;]", content) if len(line.strip()) > 20]
+        lines = [line.strip() for line in re.split(r"(?<=[.?!])\s+|\n+", content) if len(line.strip()) > 20]
         subject = request.subject or "Study Material"
         topic = request.exam_topic or "Core Concepts"
 
-        mock_templates = [
-            {
-                "question": f"Based on the provided {topic} material, which of the following statements is most accurate?",
-                "choices": [
-                    "It represents the primary mechanism governing system dynamics.",
-                    "It operates only under strictly inverse thermodynamic conditions.",
-                    "It permanently disables feedback loops across sub-processes.",
-                    "It applies exclusively to static non-interacting entities.",
-                ],
-                "correct_answer": "It represents the primary mechanism governing system dynamics.",
-                "explanation": "The core thesis of the study material outlines this principle as the governing driver of the system.",
-                "reference_concept": f"{topic} Foundations",
-            },
-            {
-                "question": f"What is a critical requirement or consequence emphasized in the discussion of {topic}?",
-                "choices": [
-                    "Maintaining bounded waiting and systematic equilibrium across cycles.",
-                    "Disregarding energy conservation constraints during state transitions.",
-                    "Eliminating all parallel and concurrent operational pathways.",
-                    "Restricting interaction solely to synthetic homogeneous systems.",
-                ],
-                "correct_answer": "Maintaining bounded waiting and systematic equilibrium across cycles.",
-                "explanation": "Proper equilibrium and bounded progression are essential conditions identified in the source notes.",
-                "reference_concept": f"{topic} Mechanisms",
-            },
-            {
-                "question": f"In {subject}, how does the text resolve tension between efficiency and regulatory control?",
-                "choices": [
-                    "Through specialized intermediate regulatory feedback checkpoints.",
-                    "By allowing uncontrolled exponential propagation without limits.",
-                    "By completely halting metabolic turnover upon initial stimulus.",
-                    "Through static rigid configurations that reject dynamic adaptation.",
-                ],
-                "correct_answer": "Through specialized intermediate regulatory feedback checkpoints.",
-                "explanation": "Regulatory checkpoints modulate throughput to prevent degradation or deadlock.",
-                "reference_concept": "Feedback & Regulation",
-            },
-            {
-                "question": f"Which factor is identified as the primary catalyst or prerequisite for {topic} activation?",
-                "choices": [
-                    "The presence of suitable substrate gradients and energetic coupling.",
-                    "The complete absence of potential difference across boundaries.",
-                    "External thermal dissipation exceeding critical thresholds.",
-                    "Total stochastic randomness without structural alignment.",
-                ],
-                "correct_answer": "The presence of suitable substrate gradients and energetic coupling.",
-                "explanation": "Coupling gradients supply the thermodynamic driving force for continuous activity.",
-                "reference_concept": "Thermodynamics & Kinetics",
-            },
-            {
-                "question": f"According to the text, what occurs when {topic} constraints are violated or compromised?",
-                "choices": [
-                    "System degradation, race conditions, or loss of energetic yield.",
-                    "Immediate instantaneous synchronization of all components.",
-                    "Spontaneous formation of perpetual kinetic cycles.",
-                    "Zero observable deviation from baseline steady state.",
-                ],
-                "correct_answer": "System degradation, race conditions, or loss of energetic yield.",
-                "explanation": "Violations lead directly to instability and functional failure as documented.",
-                "reference_concept": "System Vulnerabilities",
-            },
+        stopwords = {
+            "this", "that", "with", "from", "which", "other", "into", "place", "take",
+            "using", "during", "their", "there", "these", "those", "where", "when",
+            "form", "used", "state", "turn", "energy", "process", "could", "would",
+            "should", "about", "above", "after", "again", "against", "between", "through"
+        }
+
+        # Collect key vocabulary terms across the user's specific text
+        all_terms = []
+        for line in lines:
+            for w in re.findall(r"\b[A-Za-z]{4,}\b", line):
+                if w.lower() not in stopwords and w.capitalize() not in all_terms:
+                    all_terms.append(w.capitalize())
+
+        stock_distractors = [
+            "Equilibrium Dynamics", "System Feedback", "Regulatory Inhibition",
+            "State Coherence", "Substrate Coupling", "Catalytic Threshold",
+            "Thermodynamic Gradient", "Kinetic Synthesis", "Metabolic Turnover"
         ]
 
-        # Use sentences from text if available
         questions: List[QuizQuestion] = []
         for i in range(request.num_items):
-            tmpl = mock_templates[i % len(mock_templates)].copy()
-            concept_prefix = lines[i % len(lines)][:60] + "..." if lines else topic
-            tmpl_q = f"Regarding the concept: '{concept_prefix}', which assertion is correct?" if lines and i < len(lines) else tmpl["question"]
+            if lines:
+                line = lines[i % len(lines)]
+                words = [w for w in re.findall(r"\b[A-Za-z]{4,}\b", line) if w.lower() not in stopwords]
+                target_word = words[i % len(words)] if words else (topic.split()[0] if topic else "Principle")
+                target_cap = target_word.capitalize()
 
-            questions.append(
-                QuizQuestion(
-                    id=i + 1,
-                    question=tmpl_q,
-                    choices=tmpl["choices"],
-                    correct_answer=tmpl["correct_answer"],
-                    explanation=tmpl["explanation"],
-                    reference_concept=tmpl["reference_concept"],
+                # Build a high-yield question derived specifically from the user's sentence
+                blanked = re.sub(r"\b" + re.escape(target_word) + r"\b", "_______", line, count=1, flags=re.IGNORECASE)
+                question_templates = [
+                    f"Fill in the blank based on your notes:\n\n\"{blanked}\"",
+                    f"Regarding your notes on '{line[:65]}...', which term correctly completes the concept:\n\n\"{blanked}\"?",
+                    f"According to the source text on {topic}, which term belongs in the blank:\n\n\"{blanked}\"?",
+                    f"Which key concept from your notes completes this statement:\n\n\"{blanked}\"?",
+                    f"From your study material, identify the missing concept:\n\n\"{blanked}\"?",
+                ]
+                question_text = question_templates[i % len(question_templates)]
+                if request.num_items > len(question_templates) and i >= len(question_templates):
+                    question_text = f"[{i + 1}] {question_text}"
+
+                # Gather 3 distinct plausible distractors
+                distractors = [t for t in all_terms if t.lower() != target_cap.lower()]
+                for sd in stock_distractors:
+                    if len(distractors) >= 3:
+                        break
+                    if sd.lower() != target_cap.lower() and sd not in distractors:
+                        distractors.append(sd)
+
+                choices = [target_cap] + distractors[:3]
+                # Rotate choices so the correct answer is positioned randomly
+                rot = (i * 2 + 1) % 4
+                choices = choices[rot:] + choices[:rot]
+
+                questions.append(
+                    QuizQuestion(
+                        id=i + 1,
+                        question=question_text,
+                        choices=choices,
+                        correct_answer=target_cap,
+                        explanation=f"Directly referenced in your study notes: \"{line}\"",
+                        reference_concept=f"{topic} - {target_cap}",
+                    )
                 )
-            )
+            else:
+                # Generic fallback if no text sentences
+                questions.append(
+                    QuizQuestion(
+                        id=i + 1,
+                        question=f"Regarding {topic} in {subject}, which assertion is fundamental?",
+                        choices=[
+                            f"It constitutes the core foundational mechanism of {topic}.",
+                            "It operates exclusively in isolated, non-interacting systems.",
+                            "It invalidates the conservation laws of {subject}.",
+                            "It produces entirely random fluctuations without bounded limits.",
+                        ],
+                        correct_answer=f"It constitutes the core foundational mechanism of {topic}.",
+                        explanation=f"Foundational principle for {topic} in {subject}.",
+                        reference_concept=f"{topic} Fundamentals",
+                    )
+                )
 
         return QuizSet(
             title=f"{topic} Practice Quiz [Demo Mode]",
@@ -459,36 +460,49 @@ class LLMService:
         )
 
     def _generate_mock_flashcards(self, request: GenerationRequest) -> FlashcardDeck:
-        """Synthesize intelligent mock flashcards derived from the provided content."""
+        """Synthesize intelligent mock flashcards derived directly from the provided content."""
         content = request.content.strip()
-        lines = [line.strip() for line in re.split(r"[.\n;]", content) if len(line.strip()) > 20]
+        lines = [line.strip() for line in re.split(r"(?<=[.?!])\s+|\n+", content) if len(line.strip()) > 20]
         subject = request.subject or "Study Material"
         topic = request.exam_topic or "Key Principles"
 
-        templates = [
-            ("Explain the principle: '{snippet}'?", "Core insight from {topic}: {snippet}.", "Core Definition"),
-            ("What is the primary mechanism governing '{snippet}'?", "The governing mechanism ensures systematic operation in {topic}.", "Mechanisms"),
-            ("How does {topic} resolve interaction between components?", "Through systematic synchronization checkpoints and bounded control in {subject}.", "Control & Coordination"),
-            ("What is the foundational significance of {topic} in {subject}?", "It provides the essential framework for structural and dynamic interactions in {subject}.", "Foundations"),
-            ("What occurs when constraints of {topic} are violated?", "System degradation, race conditions, or loss of state coherence can occur in {topic}.", "Vulnerabilities"),
-        ]
+        stopwords = {
+            "this", "that", "with", "from", "which", "other", "into", "place", "take",
+            "using", "during", "their", "there", "these", "those", "where", "when",
+            "form", "used", "state", "turn", "energy", "process", "could", "would"
+        }
 
         cards: List[Flashcard] = []
         for i in range(request.num_items):
-            line_snippet = lines[i % len(lines)] if lines else topic
-            tmpl_front, tmpl_back, tmpl_concept = templates[i % len(templates)]
-            front = tmpl_front.format(snippet=line_snippet[:55], topic=topic, subject=subject)
-            if request.num_items > len(templates) and i >= len(templates):
-                front = f"[{i + 1}] {front}"
-            back = tmpl_back.format(snippet=line_snippet[:110], topic=topic, subject=subject)
-            concept = f"{topic} {tmpl_concept}"
+            if lines:
+                line = lines[i % len(lines)]
+                words = [w for w in re.findall(r"\b[A-Za-z]{4,}\b", line) if w.lower() not in stopwords]
+                kw = words[0].capitalize() if words else (topic.split()[0] if topic else "Key Concept")
+
+                prompt_templates = [
+                    f"What does your study material state regarding '{kw}'?",
+                    f"How is the principle of '{kw}' explained in your notes?",
+                    f"What is the key mechanism or role of '{kw}' according to the text?",
+                    f"Explain the significance of '{kw}' in the context: \"{line[:50]}...\"?",
+                    f"What key fact about '{kw}' is emphasized in the source material?",
+                ]
+                front = prompt_templates[i % len(prompt_templates)]
+                if request.num_items > len(prompt_templates) and i >= len(prompt_templates):
+                    front = f"[{i + 1}] {front}"
+
+                back = line
+                concept = f"{topic} • {kw}"
+            else:
+                front = f"What is the foundational principle governing {topic} ({i + 1})?"
+                back = f"It provides the essential operational framework for {topic} in {subject}."
+                concept = f"{topic} Foundations"
 
             cards.append(
                 Flashcard(
                     id=i + 1,
                     front=front,
                     back=back,
-                    explanation=f"Understanding this concept is essential for {request.difficulty.value}-level mastery of {topic}.",
+                    explanation=f"Extracted directly from your study notes on {topic} ({request.difficulty.value} difficulty).",
                     difficulty=request.difficulty,
                     key_concept=concept,
                 )

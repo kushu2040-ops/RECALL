@@ -854,15 +854,20 @@ with st.sidebar:
             help="gemini-3.5-flash-lite is Google's ultra-lightweight, high-throughput model optimized for low-latency study material generation.",
         )
 
-        force_demo = st.session_state.get("force_demo_mode", False)
+        # Auto-detect if user has an API key configured (from .env or input)
+        has_api_key = bool(user_api_key)
+        demo_default = not has_api_key
+        if "force_demo_mode" in st.session_state:
+            demo_default = st.session_state["force_demo_mode"]
+
         mock_mode_toggle = st.checkbox(
             "Demo Mode (Offline - No Key Required)",
-            value=force_demo or not bool(user_api_key),
+            value=demo_default,
             help="Generate study materials instantly without calling external API or incurring quota costs.",
             key="mock_mode_checkbox",
         )
-        if mock_mode_toggle != force_demo:
-            st.session_state["force_demo_mode"] = mock_mode_toggle
+        # Store user's explicit choice in session state
+        st.session_state["force_demo_mode"] = mock_mode_toggle
 
         st.caption("✨ **Google Gemini Free Tier:** Get a free API key with generous RPM/TPM limits at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey).")
 
@@ -905,7 +910,8 @@ if generate_clicked:
     if not is_valid:
         st.sidebar.error(f"❌ {validation_msg}")
     else:
-        is_demo_active = mock_mode_toggle or st.session_state.get("force_demo_mode", False) or not bool(user_api_key)
+        # Generation mode: only use demo mode if explicitly toggled ON or if no API key is provided
+        is_demo_active = mock_mode_toggle or not bool(user_api_key)
         service = LLMService(
             api_key=user_api_key,
             model_name=model_name_input,
