@@ -229,5 +229,46 @@ tests/test_flows.py::test_flow_5_export_study_materials PASSED
 
 ---
 
+## 🌐 Production & Cloud Deployment Guide
+
+### Option 1: Streamlit Community Cloud (Recommended — Free & Easiest)
+1. Push this repository to your GitHub account:
+   ```powershell
+   git remote add origin https://github.com/<YOUR_USERNAME>/<YOUR_REPO_NAME>.git
+   git push -u origin main
+   ```
+2. Navigate to **[share.streamlit.io](https://share.streamlit.io/)** and sign in with GitHub.
+3. Click **"New app"**, select your repository, branch (`main`), and set the main file path to `app.py`.
+4. Click **"Advanced settings"** -> **"Secrets"** and add:
+   ```toml
+   GEMINI_API_KEY = "AIzaSy..."
+   GEMINI_MODEL = "gemini-3.5-flash-lite"
+   ```
+5. Click **"Deploy"**! Your app will be live with a public HTTPS URL.
+
+---
+
+### Option 2: Docker Container Deployment (Cloud Run, Render, Railway, AWS ECS)
+1. **Build the Production Image**:
+   ```bash
+   docker build -t recoll-study-app .
+   ```
+2. **Run Locally or in Container Host**:
+   ```bash
+   docker run -d -p 8501:8501 -e GEMINI_API_KEY="your_api_key_here" --name recoll recoll-study-app
+   ```
+3. Access at `http://localhost:8501`.
+
+---
+
+### Option 3: PaaS Deployments (Render / Railway / Heroku)
+The included `Procfile` specifies the web startup command:
+```
+web: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
+```
+Set `GEMINI_API_KEY` in your PaaS dashboard environment variables.
+
+---
+
 ## 📄 License
 MIT License. Created for students, educators, and lifelong learners.
