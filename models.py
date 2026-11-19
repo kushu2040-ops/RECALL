@@ -23,14 +23,25 @@ class ContentType(str, Enum):
     FLASHCARDS = "Q&A Flashcards Only"
 
 
+class GenerationSourceMode(str, Enum):
+    """Source mode for generation."""
+    NOTES_ONLY = "Strictly From Given Notes / File"
+    TOPIC_EXPANDED = "From Subject & Topic (AI Curriculum Knowledge)"
+    HYBRID = "Hybrid (Notes + Broad Topic Applications)"
+
+
 class GenerationRequest(BaseModel):
     """Configuration and input content for study material generation."""
     content: str = Field(..., min_length=20, description="Source study material or notes.")
     content_type: ContentType = Field(default=ContentType.QUIZ, description="Target study format.")
+    source_mode: GenerationSourceMode = Field(
+        default=GenerationSourceMode.NOTES_ONLY,
+        description="Source grounding mode for questions."
+    )
     subject: Optional[str] = Field(default="", description="Subject or discipline (e.g. Biology, CS).")
     exam_topic: Optional[str] = Field(default="", description="Target exam or chapter topic.")
     learning_goals: Optional[str] = Field(default="", description="Desired learning outcomes.")
-    num_items: int = Field(default=5, ge=1, le=30, description="Number of items to generate.")
+    num_items: int = Field(default=5, ge=1, le=40, description="Number of items to generate.")
     difficulty: DifficultyLevel = Field(default=DifficultyLevel.MEDIUM, description="Target difficulty level.")
     focus_instructions: Optional[str] = Field(default="", description="Specific subtopics or guidelines.")
 

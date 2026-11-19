@@ -18,6 +18,7 @@ from models import (
     DifficultyLevel,
     FlashcardDeck,
     GenerationRequest,
+    GenerationSourceMode,
     QuizSet,
 )
 from prompts import SAMPLE_STUDY_MATERIALS
@@ -666,6 +667,7 @@ def init_session_state() -> None:
         "goals_input": "Master energy organelles and cellular respiration",
         "focus_input": "Mitochondria, ATP synthesis, and cell membranes",
         "content_type": ContentType.BOTH.value,
+        "source_mode": GenerationSourceMode.NOTES_ONLY.value,
         "quiz_style": "Conceptual & Application",
         "num_flashcards": 10,
         "num_quiz": 5,
@@ -799,7 +801,31 @@ with st.sidebar:
     st.markdown("---")
     st.markdown('<div class="eyebrow-tag">02 Make It Yours</div>', unsafe_allow_html=True)
 
-    # Content Format Selector (Both, Quiz Only, Flashcards Only)
+    # 1. Question Source Grounding Mode (Strictly from text vs From Subject & Topic vs Hybrid)
+    source_mode_choice = st.radio(
+        "Generate Questions From:",
+        options=[
+            GenerationSourceMode.NOTES_ONLY.value,
+            GenerationSourceMode.TOPIC_EXPANDED.value,
+            GenerationSourceMode.HYBRID.value,
+        ],
+        index=0,
+        help=(
+            "• 'Strictly From Given Notes / File': All questions are strictly extracted only from the text above.\n"
+            "• 'From Subject & Topic': AI generates full curriculum exam questions based on Subject/Topic.\n"
+            "• 'Hybrid': Anchored in your notes but tests broader conceptual mastery."
+        ),
+    )
+    st.session_state.source_mode = source_mode_choice
+
+    if source_mode_choice == GenerationSourceMode.NOTES_ONLY.value:
+        st.info("📖 **Text Mode Active**: Questions will be generated **strictly from your provided text or file**.")
+    elif source_mode_choice == GenerationSourceMode.TOPIC_EXPANDED.value:
+        st.info("🎓 **Make It Yours Active**: Questions will test **broad curriculum knowledge** from your Subject & Exam Topic below.")
+    else:
+        st.info("⚡ **Hybrid Mode**: Questions test your source notes combined with broader conceptual applications.")
+
+    # 2. Content Format Selector (Both, Quiz Only, Flashcards Only)
     content_format_choice = st.radio(
         "Study Format",
         options=[
@@ -1010,6 +1036,9 @@ if generate_clicked:
         user_focus = st.session_state.get("focus_input", "")
         combined_focus = f"{style_instruction} {user_focus}".strip()
 
+        # Extract source grounding mode
+        chosen_source_mode = GenerationSourceMode(st.session_state.get("source_mode", GenerationSourceMode.NOTES_ONLY.value))
+
         with st.spinner("🧠 Generating your study set..."):
             deck = None
             fc_err = None
@@ -1021,6 +1050,7 @@ if generate_clicked:
                 fc_req = GenerationRequest(
                     content=raw_notes,
                     content_type=ContentType.FLASHCARDS,
+                    source_mode=chosen_source_mode,
                     subject=st.session_state.subject_input,
                     exam_topic=st.session_state.topic_input,
                     learning_goals=st.session_state.goals_input,
@@ -1035,6 +1065,7 @@ if generate_clicked:
                 q_req = GenerationRequest(
                     content=raw_notes,
                     content_type=ContentType.QUIZ,
+                    source_mode=chosen_source_mode,
                     subject=st.session_state.subject_input,
                     exam_topic=st.session_state.topic_input,
                     learning_goals=st.session_state.goals_input,

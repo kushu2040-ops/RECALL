@@ -364,11 +364,14 @@ class LLMService:
             return None, format_api_error(err, self.api_key)
 
     def _generate_mock_quiz(self, request: GenerationRequest) -> QuizSet:
-        """Synthesize intelligent mock quiz items derived directly from the provided content."""
+        """Synthesize intelligent mock quiz items derived directly from the provided content or topic."""
         content = request.content.strip()
         lines = [line.strip() for line in re.split(r"(?<=[.?!])\s+|\n+", content) if len(line.strip()) > 20]
         subject = request.subject or "Study Material"
         topic = request.exam_topic or "Core Concepts"
+
+        from models import GenerationSourceMode
+        source_mode = getattr(request, "source_mode", GenerationSourceMode.NOTES_ONLY)
 
         stopwords = {
             "this", "that", "with", "from", "which", "other", "into", "place", "take",
@@ -390,15 +393,82 @@ class LLMService:
             "Thermodynamic Gradient", "Kinetic Synthesis", "Metabolic Turnover"
         ]
 
+        topic_curriculum_templates = [
+            {
+                "question": f"In {subject}, what is the governing principle behind {topic}?",
+                "choices": [
+                    f"It coordinates systematic operational transitions in {topic}.",
+                    "It operates strictly under perpetual non-interacting conditions.",
+                    "It permanently disables feedback loops across sub-processes.",
+                    "It applies exclusively to static non-interacting entities.",
+                ],
+                "correct_answer": f"It coordinates systematic operational transitions in {topic}.",
+                "explanation": f"Core curriculum definition for {topic} in {subject}.",
+                "reference_concept": f"{topic} Core Mechanism",
+            },
+            {
+                "question": f"Which critical requirement is emphasized in academic study of {topic}?",
+                "choices": [
+                    "Maintaining systematic equilibrium and bounded state progression.",
+                    "Disregarding conservation constraints during state transitions.",
+                    "Eliminating all parallel and concurrent operational pathways.",
+                    "Restricting interaction solely to synthetic homogeneous systems.",
+                ],
+                "correct_answer": "Maintaining systematic equilibrium and bounded state progression.",
+                "explanation": f"Curriculum requirement for {topic}.",
+                "reference_concept": f"{topic} Dynamics",
+            },
+            {
+                "question": f"In {subject}, how is tension between throughput and regulatory control resolved in {topic}?",
+                "choices": [
+                    "Through intermediate regulatory feedback checkpoints.",
+                    "By allowing uncontrolled exponential propagation without limits.",
+                    "By completely halting turnover upon initial stimulus.",
+                    "Through static rigid configurations that reject dynamic adaptation.",
+                ],
+                "correct_answer": "Through intermediate regulatory feedback checkpoints.",
+                "explanation": f"Standard regulatory mechanisms in {subject}.",
+                "reference_concept": "Feedback & Regulation",
+            },
+            {
+                "question": f"What occurs when foundational constraints of {topic} are violated?",
+                "choices": [
+                    "System degradation, race conditions, or loss of state coherence.",
+                    "Immediate instantaneous synchronization of all components.",
+                    "Spontaneous formation of perpetual kinetic cycles.",
+                    "Zero observable deviation from baseline steady state.",
+                ],
+                "correct_answer": "System degradation, race conditions, or loss of state coherence.",
+                "explanation": f"System vulnerability analysis for {topic}.",
+                "reference_concept": "Vulnerabilities & Edge Cases",
+            },
+        ]
+
         questions: List[QuizQuestion] = []
         for i in range(request.num_items):
-            if lines:
+            # If TOPIC_EXPANDED mode chosen, generate curriculum-level questions from Make It Yours
+            if source_mode == GenerationSourceMode.TOPIC_EXPANDED:
+                t_tmpl = topic_curriculum_templates[i % len(topic_curriculum_templates)]
+                q_text = t_tmpl["question"]
+                if request.num_items > len(topic_curriculum_templates) and i >= len(topic_curriculum_templates):
+                    q_text = f"[{i + 1}] {q_text}"
+                questions.append(
+                    QuizQuestion(
+                        id=i + 1,
+                        question=q_text,
+                        choices=t_tmpl["choices"],
+                        correct_answer=t_tmpl["correct_answer"],
+                        explanation=t_tmpl["explanation"],
+                        reference_concept=t_tmpl["reference_concept"],
+                    )
+                )
+            elif lines:
+                # NOTES_ONLY or HYBRID mode: extract directly from the provided sentences
                 line = lines[i % len(lines)]
                 words = [w for w in re.findall(r"\b[A-Za-z]{4,}\b", line) if w.lower() not in stopwords]
                 target_word = words[i % len(words)] if words else (topic.split()[0] if topic else "Principle")
                 target_cap = target_word.capitalize()
 
-                # Build a high-yield question derived specifically from the user's sentence
                 blanked = re.sub(r"\b" + re.escape(target_word) + r"\b", "_______", line, count=1, flags=re.IGNORECASE)
                 question_templates = [
                     f"Fill in the blank based on your notes:\n\n\"{blanked}\"",
@@ -411,7 +481,6 @@ class LLMService:
                 if request.num_items > len(question_templates) and i >= len(question_templates):
                     question_text = f"[{i + 1}] {question_text}"
 
-                # Gather 3 distinct plausible distractors
                 distractors = [t for t in all_terms if t.lower() != target_cap.lower()]
                 for sd in stock_distractors:
                     if len(distractors) >= 3:
@@ -420,7 +489,6 @@ class LLMService:
                         distractors.append(sd)
 
                 choices = [target_cap] + distractors[:3]
-                # Rotate choices so the correct answer is positioned randomly
                 rot = (i * 2 + 1) % 4
                 choices = choices[rot:] + choices[:rot]
 
@@ -439,7 +507,7 @@ class LLMService:
                 questions.append(
                     QuizQuestion(
                         id=i + 1,
-                        question=f"Regarding {topic} in {subject}, which assertion is fundamental?",
+                        question=f"Regarding {topic} in {subject}, which assertion is fundamental ({i + 1})?",
                         choices=[
                             f"It constitutes the core foundational mechanism of {topic}.",
                             "It operates exclusively in isolated, non-interacting systems.",
@@ -452,19 +520,23 @@ class LLMService:
                     )
                 )
 
+        mode_label = "Notes Mode" if source_mode == GenerationSourceMode.NOTES_ONLY else ("Topic Mode" if source_mode == GenerationSourceMode.TOPIC_EXPANDED else "Hybrid Mode")
         return QuizSet(
-            title=f"{topic} Practice Quiz [Demo Mode]",
+            title=f"{topic} Practice Quiz [{mode_label}]",
             subject=subject,
             difficulty=request.difficulty,
             questions=questions,
         )
 
     def _generate_mock_flashcards(self, request: GenerationRequest) -> FlashcardDeck:
-        """Synthesize intelligent mock flashcards derived directly from the provided content."""
+        """Synthesize intelligent mock flashcards derived directly from the provided content or topic."""
         content = request.content.strip()
         lines = [line.strip() for line in re.split(r"(?<=[.?!])\s+|\n+", content) if len(line.strip()) > 20]
         subject = request.subject or "Study Material"
         topic = request.exam_topic or "Key Principles"
+
+        from models import GenerationSourceMode
+        source_mode = getattr(request, "source_mode", GenerationSourceMode.NOTES_ONLY)
 
         stopwords = {
             "this", "that", "with", "from", "which", "other", "into", "place", "take",
@@ -472,9 +544,51 @@ class LLMService:
             "form", "used", "state", "turn", "energy", "process", "could", "would"
         }
 
+        topic_curriculum_flashcards = [
+            (
+                f"What is the foundational definition of {topic}?",
+                f"In {subject}, {topic} defines the principal mechanism coordinating system components and energetic pathways.",
+                f"{topic} Core Definition"
+            ),
+            (
+                f"What is the primary governing mechanism of {topic}?",
+                f"It regulates progression through bounded feedback checkpoints and systematic equilibrium.",
+                f"{topic} Mechanisms"
+            ),
+            (
+                f"How is {topic} practically applied in {subject}?",
+                f"It is applied to optimize yield, maintain state coherence, and avoid critical boundary degradation.",
+                f"{topic} Application"
+            ),
+            (
+                f"What critical failure occurs when constraints of {topic} are violated?",
+                f"System instability, loss of regulatory feedback, and functional degradation.",
+                f"{topic} Vulnerabilities"
+            ),
+            (
+                f"What prerequisite condition is required for {topic} activation?",
+                f"Appropriate potential difference, substrate concentration gradients, and coupling dynamics.",
+                f"{topic} Prerequisites"
+            ),
+        ]
+
         cards: List[Flashcard] = []
         for i in range(request.num_items):
-            if lines:
+            if source_mode == GenerationSourceMode.TOPIC_EXPANDED:
+                t_front, t_back, t_concept = topic_curriculum_flashcards[i % len(topic_curriculum_flashcards)]
+                if request.num_items > len(topic_curriculum_flashcards) and i >= len(topic_curriculum_flashcards):
+                    t_front = f"[{i + 1}] {t_front}"
+                cards.append(
+                    Flashcard(
+                        id=i + 1,
+                        front=t_front,
+                        back=t_back,
+                        explanation=f"Core curriculum concept for {topic} in {subject}.",
+                        difficulty=request.difficulty,
+                        key_concept=t_concept,
+                    )
+                )
+            elif lines:
                 line = lines[i % len(lines)]
                 words = [w for w in re.findall(r"\b[A-Za-z]{4,}\b", line) if w.lower() not in stopwords]
                 kw = words[0].capitalize() if words else (topic.split()[0] if topic else "Key Concept")
@@ -492,24 +606,36 @@ class LLMService:
 
                 back = line
                 concept = f"{topic} • {kw}"
+
+                cards.append(
+                    Flashcard(
+                        id=i + 1,
+                        front=front,
+                        back=back,
+                        explanation=f"Extracted directly from your study notes on {topic} ({request.difficulty.value} difficulty).",
+                        difficulty=request.difficulty,
+                        key_concept=concept,
+                    )
+                )
             else:
                 front = f"What is the foundational principle governing {topic} ({i + 1})?"
                 back = f"It provides the essential operational framework for {topic} in {subject}."
                 concept = f"{topic} Foundations"
 
-            cards.append(
-                Flashcard(
-                    id=i + 1,
-                    front=front,
-                    back=back,
-                    explanation=f"Extracted directly from your study notes on {topic} ({request.difficulty.value} difficulty).",
-                    difficulty=request.difficulty,
-                    key_concept=concept,
+                cards.append(
+                    Flashcard(
+                        id=i + 1,
+                        front=front,
+                        back=back,
+                        explanation=f"Foundational principle for {topic} in {subject}.",
+                        difficulty=request.difficulty,
+                        key_concept=concept,
+                    )
                 )
-            )
 
+        mode_label = "Notes Deck" if source_mode == GenerationSourceMode.NOTES_ONLY else ("Curriculum Deck" if source_mode == GenerationSourceMode.TOPIC_EXPANDED else "Hybrid Deck")
         return FlashcardDeck(
-            title=f"{topic} Study Deck [Demo Mode]",
+            title=f"{topic} Study Deck [{mode_label}]",
             subject=subject,
             cards=cards,
         )

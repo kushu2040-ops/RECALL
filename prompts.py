@@ -40,13 +40,36 @@ Guidelines for flashcards:
 
 
 def build_quiz_prompt(req: GenerationRequest, text_content: str) -> str:
-    """Construct the user prompt for quiz generation."""
+    """Construct the user prompt for quiz generation based on selected source mode."""
     subject_str = f"Subject: {req.subject}\n" if req.subject else ""
     topic_str = f"Exam Topic: {req.exam_topic}\n" if req.exam_topic else ""
     goals_str = f"Learning Goals: {req.learning_goals}\n" if req.learning_goals else ""
     focus_str = f"Specific Focus / Instructions: {req.focus_instructions}\n" if req.focus_instructions else ""
 
-    return f"""Please generate a {req.difficulty.value}-level Multiple-Choice Quiz with exactly {req.num_items} questions based on the source text below.
+    from models import GenerationSourceMode
+    source_mode = getattr(req, "source_mode", GenerationSourceMode.NOTES_ONLY)
+
+    if source_mode == GenerationSourceMode.NOTES_ONLY:
+        mode_instruction = (
+            "STRICT SOURCE GROUNDING MODE: Generate questions, choices, and explanations strictly and exclusively "
+            "from the facts, definitions, and statements explicitly present in the provided Source Study Material below. "
+            "Do NOT introduce external topics or unmentioned facts outside the provided notes."
+        )
+    elif source_mode == GenerationSourceMode.TOPIC_EXPANDED:
+        mode_instruction = (
+            f"MAKE IT YOURS (TOPIC-EXPANDED MODE): Generate a comprehensive curriculum quiz on the Subject '{req.subject}' "
+            f"and Topic '{req.exam_topic}', using the provided text as starting context. Draw upon standard academic curriculum "
+            "knowledge to test core theorems, standard problem types, mechanisms, and foundational principles for this topic."
+        )
+    else:  # HYBRID
+        mode_instruction = (
+            "HYBRID MODE: Formulate questions that directly test the provided notes while connecting them to broader "
+            "conceptual applications, comparative analyses, and curriculum principles in this subject."
+        )
+
+    return f"""Please generate a {req.difficulty.value}-level Multiple-Choice Quiz with exactly {req.num_items} questions.
+
+{mode_instruction}
 
 {subject_str}{topic_str}{goals_str}{focus_str}Difficulty: {req.difficulty.value}
 Number of Questions: {req.num_items}
@@ -65,13 +88,34 @@ Requirements:
 
 
 def build_flashcard_prompt(req: GenerationRequest, text_content: str) -> str:
-    """Construct the user prompt for flashcard generation."""
+    """Construct the user prompt for flashcard generation based on selected source mode."""
     subject_str = f"Subject: {req.subject}\n" if req.subject else ""
     topic_str = f"Exam Topic: {req.exam_topic}\n" if req.exam_topic else ""
     goals_str = f"Learning Goals: {req.learning_goals}\n" if req.learning_goals else ""
     focus_str = f"Specific Focus / Instructions: {req.focus_instructions}\n" if req.focus_instructions else ""
 
-    return f"""Please generate a set of exactly {req.num_items} active-recall Flashcards at {req.difficulty.value} difficulty based on the source text below.
+    from models import GenerationSourceMode
+    source_mode = getattr(req, "source_mode", GenerationSourceMode.NOTES_ONLY)
+
+    if source_mode == GenerationSourceMode.NOTES_ONLY:
+        mode_instruction = (
+            "STRICT SOURCE GROUNDING MODE: Every flashcard front prompt and back answer must be extracted directly "
+            "and exclusively from the provided source notes. Do NOT include concepts not mentioned in the text."
+        )
+    elif source_mode == GenerationSourceMode.TOPIC_EXPANDED:
+        mode_instruction = (
+            f"MAKE IT YOURS (TOPIC-EXPANDED MODE): Generate high-yield study flashcards for {req.subject} - {req.exam_topic}, "
+            "covering essential terms, laws, formulas, and key definitions across the broader academic curriculum for this topic."
+        )
+    else:  # HYBRID
+        mode_instruction = (
+            "HYBRID MODE: Anchor flashcards in the provided source material while enriching them with core conceptual definitions "
+            "and active recall mnemonics."
+        )
+
+    return f"""Please generate a set of exactly {req.num_items} active-recall Flashcards at {req.difficulty.value} difficulty.
+
+{mode_instruction}
 
 {subject_str}{topic_str}{goals_str}{focus_str}Difficulty: {req.difficulty.value}
 Number of Cards: {req.num_items}
