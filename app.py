@@ -4,7 +4,13 @@ SaaS Dashboard UI featuring the Recoll • Study Quiz Maker brand identity.
 
 import base64
 import os
+import sys
 from pathlib import Path
+
+# Ensure the app root directory is always in sys.path on Streamlit Cloud Linux mounts
+ROOT_DIR = Path(__file__).resolve().parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from dotenv import load_dotenv
 
